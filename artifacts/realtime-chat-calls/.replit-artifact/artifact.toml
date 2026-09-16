@@ -1,0 +1,24 @@
+kind = "mobile"
+previewPath = "/"
+title = "Realtime Chat Calls"
+description = "A React Native chat app for Android and iOS with Firebase realtime messaging, presence, and WebRTC audio and video calling."
+version = "1.0.0"
+id = "artifacts/realtime-chat-calls"
+router = "expo-domain"
+
+[[services]]
+name = "expo"
+ensurePreviewReachable = "/status"
+paths = [ "/" ]
+localPort = 25562
+
+[services.development]
+run = "pnpm --filter @workspace/realtime-chat-calls run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/realtime-chat-calls", "run", "build" ]
+run = [ "pnpm", "--filter", "@workspace/realtime-chat-calls", "run", "serve" ]
+
+[services.env]
+PORT = "25562"
+BASE_PATH = "/"

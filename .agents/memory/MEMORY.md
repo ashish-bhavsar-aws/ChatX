@@ -1,0 +1,1 @@
+- [Realtime calling constraints](realtime-calls.md) — lazy-load native WebRTC; browser preview cannot import the native module directly.

@@ -1,6 +1,6 @@
-# [Project name]
+# Pulse Realtime Chat Calls
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+Pulse is a React Native chat app for Android and iOS with Firebase realtime messaging and native WebRTC audio/video calling.
 
 ## Run & Operate
 
@@ -10,6 +10,8 @@ _Replace the heading above with the project's name, and this line with one sente
 - `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
 - `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
 - Required env: `DATABASE_URL` — Postgres connection string
+- Firebase client envs: `EXPO_PUBLIC_FIREBASE_API_KEY`, `EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN`, `EXPO_PUBLIC_FIREBASE_DATABASE_URL`, `EXPO_PUBLIC_FIREBASE_PROJECT_ID`, `EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET`, `EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID`, `EXPO_PUBLIC_FIREBASE_APP_ID`
+- Optional TURN envs: `EXPO_PUBLIC_TURN_URL`, `EXPO_PUBLIC_TURN_USERNAME`, `EXPO_PUBLIC_TURN_CREDENTIAL`
 
 ## Stack
 
@@ -22,15 +24,22 @@ _Replace the heading above with the project's name, and this line with one sente
 
 ## Where things live
 
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
+- `artifacts/realtime-chat-calls/app/index.tsx` — inbox, chat detail, composer, and call surface
+- `artifacts/realtime-chat-calls/services/firebase.ts` — Firebase Realtime Database adapter and ICE server configuration
+- `artifacts/realtime-chat-calls/services/call.ts` — platform-safe native WebRTC capture and peer connection foundation
+- `artifacts/realtime-chat-calls/constants/colors.ts` — Pulse dark theme tokens
 
 ## Architecture decisions
 
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
+- Firebase is optional at startup: the app persists a local preview conversation until the Firebase client envs are supplied.
+- Google STUN servers are always included; TURN is opt-in through runtime configuration because Google does not provide a public TURN relay.
+- WebRTC is loaded lazily on native platforms so the browser preview remains usable.
 
 ## Product
 
-_Describe the high-level user-facing capabilities of this app once they exist._
+- Inbox with search and unread states
+- Persistent local conversations with Firebase Realtime Database synchronization when configured
+- Audio/video call UI with native camera/microphone capture, mute, camera toggle, private-call indicator, and hang-up
 
 ## User preferences
 

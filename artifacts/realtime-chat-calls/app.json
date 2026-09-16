@@ -1,0 +1,32 @@
+{
+  "expo": {
+    "name": "Realtime Chat Calls",
+    "slug": "realtime-chat-calls",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "realtime-chat-calls",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "backgroundColor": "#075E54"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "infoPlist": {
+        "NSCameraUsageDescription": "Pulse uses your camera for video calls.",
+        "NSMicrophoneUsageDescription": "Pulse uses your microphone for audio and video calls."
+      }
+    },
+    "android": {
+      "permissions": ["android.permission.CAMERA", "android.permission.RECORD_AUDIO"]
+    },
+    "web": {
+      "favicon": "./assets/images/icon.png"
+    },
+    "plugins": ["expo-router"],
+    "experiments": {
+      "typedRoutes": true,
+      "reactCompiler": true
+    }
+  }
+}
