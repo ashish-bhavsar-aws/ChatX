@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { sendCallNotification, sendMessageNotification } from '@workspace/api-client-react';
 import {
   Alert,
   FlatList,
@@ -26,11 +27,15 @@ import {
   subscribeToRoom,
 } from '@/services/firebase';
 import {
+  CallRole,
+  CallSession,
   CallMode,
   CallStream,
-  createLocalCallStream,
-  stopLocalCallStream,
+  createCallSession,
+  subscribeToIncomingCalls,
 } from '@/services/call';
+import { decryptJson, encryptJson } from '@/services/crypto';
+import { enablePushNotifications } from '@/services/notifications';
 
 type Person = {
   id: string;
@@ -50,6 +55,7 @@ type Thread = Person & {
 
 type PendingMessage = {
   roomId: string;
+  recipientUserId: string;
   message: ChatMessage;
 };
 
@@ -253,41 +259,68 @@ function ConversationRow({
 function CallSheet({
   person,
   mode,
+  role,
+  callId,
+  callerId,
+  calleeId,
+  roomId,
   onClose,
 }: {
   person: Person;
   mode: CallMode;
+  role: CallRole;
+  callId: string;
+  callerId: string;
+  calleeId: string;
+  roomId: string;
   onClose: () => void;
 }) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const [stream, setStream] = useState<CallStream | null>(null);
+  const [remoteStream, setRemoteStream] = useState<CallStream | null>(null);
   const [isMuted, setIsMuted] = useState(false);
   const [isCameraOff, setIsCameraOff] = useState(mode === 'audio');
   const [seconds, setSeconds] = useState(0);
   const [callError, setCallError] = useState<string | null>(null);
+  const [connectionState, setConnectionState] = useState<'connecting' | 'connected' | 'degraded'>('connecting');
+  const sessionRef = useRef<CallSession | null>(null);
 
   useEffect(() => {
     let active = true;
-    createLocalCallStream(mode)
-      .then((localStream) => {
-        if (active) setStream(localStream);
-        else stopLocalCallStream(localStream);
-      })
-      .catch(() => {
+    createCallSession({
+      roomId,
+      callId,
+      role,
+      mode,
+      callerId,
+      calleeId,
+      onRemoteStream: setRemoteStream,
+      onConnectionStateChange: (state) => {
+        setConnectionState(state === 'connected' ? 'connected' : state === 'disconnected' || state === 'failed' ? 'degraded' : 'connecting');
+      },
+    })
+      .then((session) => {
         if (active) {
-          setCallError(
-            'Camera or microphone access is unavailable. Check permissions on your device.',
-          );
+          sessionRef.current = session;
+          setStream(session.localStream);
+        } else {
+          session.dispose();
+        }
+      })
+      .catch((error: unknown) => {
+        if (active) {
+          setCallError(error instanceof Error ? error.message : 'Calling is unavailable right now.');
         }
       });
     const timer = setInterval(() => setSeconds((value) => value + 1), 1000);
     return () => {
       active = false;
       clearInterval(timer);
-      stopLocalCallStream(stream);
+      sessionRef.current?.dispose();
+      sessionRef.current = null;
     };
-  }, [mode]);
+  }, [callId, calleeId, callerId, mode, role, roomId]);
 
   const toggleMute = () => {
     stream?.getAudioTracks().forEach((track) => {
@@ -304,11 +337,19 @@ function CallSheet({
   };
 
   const finish = () => {
-    stopLocalCallStream(stream);
+    sessionRef.current?.dispose();
+    sessionRef.current = null;
     onClose();
   };
 
   const elapsed = `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
+  const callStatus =
+    callError ??
+    (connectionState === 'degraded'
+      ? 'Weak connection · lowering video quality'
+      : connectionState === 'connected'
+        ? 'Connected securely'
+        : 'Connecting securely…');
 
   return (
     <View style={[styles.callSheet, { backgroundColor: '#171A21', paddingTop: insets.top }]}>
@@ -328,15 +369,15 @@ function CallSheet({
       </View>
 
       <View style={styles.callStage}>
-        {stream && mode === 'video' && !isCameraOff ? (
-          <CallMediaView stream={stream} style={styles.localVideo} />
+        {remoteStream && mode === 'video' ? (
+          <CallMediaView stream={remoteStream} style={styles.localVideo} />
         ) : (
           <View style={styles.callAvatarWrap}>
             <View style={styles.callAvatarRing}>
               <Avatar person={person} size={116} online />
             </View>
             <Text style={styles.callPerson}>{person.name}</Text>
-            <Text style={styles.callStatus}>{callError ?? 'Connecting securely…'}</Text>
+            <Text style={styles.callStatus}>{callStatus}</Text>
           </View>
         )}
         {stream && mode === 'video' && !isCameraOff ? (
@@ -346,10 +387,16 @@ function CallSheet({
         ) : null}
       </View>
 
-      {callError ? (
+      {callError || connectionState === 'degraded' ? (
         <View style={styles.callNotice}>
-          <Ionicons name="information-circle-outline" size={17} color="#F7D9A4" />
-          <Text style={styles.callNoticeText}>{callError}</Text>
+          <Ionicons
+            name={callError ? 'information-circle-outline' : 'speedometer-outline'}
+            size={17}
+            color="#F7D9A4"
+          />
+          <Text style={styles.callNoticeText}>
+            {callError ?? 'Low bandwidth mode is active. Video is using less data.'}
+          </Text>
         </View>
       ) : null}
 
@@ -531,12 +578,37 @@ export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
-  const [call, setCall] = useState<{ person: Person; mode: CallMode } | null>(null);
+  const [call, setCall] = useState<{
+    person: Person;
+    mode: CallMode;
+    role: CallRole;
+    callId: string;
+    callerId: string;
+    calleeId: string;
+    roomId: string;
+  } | null>(null);
   const [messageMap, setMessageMap] = useState<Record<string, ChatMessage[]>>(INITIAL_MESSAGES);
   const [hydrated, setHydrated] = useState(false);
   const [isOnline, setIsOnline] = useState<boolean | null>(null);
   const [pendingMessages, setPendingMessages] = useState<PendingMessage[]>([]);
   const flushingRef = useRef(false);
+  const persistenceQueueRef = useRef(Promise.resolve());
+  const currentUserId = process.env.EXPO_PUBLIC_USER_ID ?? ME;
+
+  const enableNotifications = async () => {
+    try {
+      const result = await enablePushNotifications('demo-user');
+      if (result.ok) {
+        Alert.alert('Notifications enabled', 'Pulse will alert you about new messages and incoming calls.');
+      } else if (result.reason === 'permission_denied') {
+        Alert.alert('Notifications are off', 'Enable notifications for Pulse from your device settings.');
+      } else {
+        Alert.alert('Use a physical device', 'Push notifications are available in the iOS or Android build.');
+      }
+    } catch {
+      Alert.alert('Could not enable notifications', 'Check your connection and try again.');
+    }
+  };
 
   useEffect(() => {
     NetInfo.fetch().then((state) => setIsOnline(state.isConnected !== false));
@@ -547,11 +619,7 @@ export default function HomeScreen() {
     AsyncStorage.getItem('pulse-messages')
       .then((value) => {
         if (value) {
-          try {
-            setMessageMap(JSON.parse(value) as Record<string, ChatMessage[]>);
-          } catch {
-            setMessageMap(INITIAL_MESSAGES);
-          }
+          void decryptJson<Record<string, ChatMessage[]>>(value, INITIAL_MESSAGES).then(setMessageMap);
         }
       })
       .catch(() => undefined)
@@ -562,11 +630,7 @@ export default function HomeScreen() {
     AsyncStorage.getItem('pulse-pending-messages')
       .then((value) => {
         if (value) {
-          try {
-            setPendingMessages(JSON.parse(value) as PendingMessage[]);
-          } catch {
-            setPendingMessages([]);
-          }
+          void decryptJson<PendingMessage[]>(value, []).then(setPendingMessages);
         }
       })
       .catch(() => undefined);
@@ -574,11 +638,17 @@ export default function HomeScreen() {
 
   useEffect(() => {
     if (!hydrated) return;
-    AsyncStorage.setItem('pulse-messages', JSON.stringify(messageMap)).catch(() => undefined);
+    persistenceQueueRef.current = persistenceQueueRef.current
+      .then(() => encryptJson(messageMap))
+      .then((encrypted) => AsyncStorage.setItem('pulse-messages', encrypted))
+      .catch(() => undefined);
   }, [hydrated, messageMap]);
 
   useEffect(() => {
-    AsyncStorage.setItem('pulse-pending-messages', JSON.stringify(pendingMessages)).catch(() => undefined);
+    persistenceQueueRef.current = persistenceQueueRef.current
+      .then(() => encryptJson(pendingMessages))
+      .then((encrypted) => AsyncStorage.setItem('pulse-pending-messages', encrypted))
+      .catch(() => undefined);
   }, [pendingMessages]);
 
   useEffect(() => {
@@ -592,6 +662,13 @@ export default function HomeScreen() {
         const sent = await sendRoomMessage(pending.roomId, pending.message);
         if (!sent) break;
         deliveredIds.push(pending.message.id);
+        const recipientUserId =
+          pending.recipientUserId ?? pending.roomId.replace(/^demo-room-/, '');
+        void sendMessageNotification({
+          recipientUserId,
+          senderName: 'Pulse',
+          roomId: pending.roomId,
+        }).catch(() => undefined);
       }
       if (deliveredIds.length) {
         setPendingMessages((current) =>
@@ -613,6 +690,34 @@ export default function HomeScreen() {
     });
     return () => unsubscribe?.();
   }, [selectedId]);
+
+  useEffect(() => {
+    if (!isFirebaseConfigured || call) return;
+    const unsubscribes = PEOPLE.map((person) =>
+      subscribeToIncomingCalls(roomIdFor(person.id), currentUserId, (incomingCall) => {
+        const caller =
+          PEOPLE.find((personEntry) => personEntry.id === incomingCall.callerId) ?? {
+            id: incomingCall.callerId,
+            name: incomingCall.callerId === ME ? 'Pulse caller' : incomingCall.callerId,
+            initials: 'PC',
+            color: '#8C9BE8',
+            status: 'Calling now',
+          };
+        setCall({
+          person: caller,
+          mode: incomingCall.mode,
+          role: 'callee',
+          callId: incomingCall.id,
+          callerId: incomingCall.callerId,
+          calleeId: currentUserId,
+          roomId: roomIdFor(person.id),
+        });
+      }),
+    );
+    return () => {
+      unsubscribes.forEach((unsubscribe) => unsubscribe?.());
+    };
+  }, [call, currentUserId]);
 
   const threads = useMemo<Thread[]>(() => {
     const normalizedSearch = search.trim().toLowerCase();
@@ -647,14 +752,52 @@ export default function HomeScreen() {
       if (!sent) {
         setPendingMessages((current) => [
           ...current.filter((pending) => pending.message.id !== message.id),
-          { roomId, message },
+          { roomId, recipientUserId: selectedPerson.id, message },
         ]);
+      } else {
+        void sendMessageNotification({
+          recipientUserId: selectedPerson.id,
+          senderName: 'Pulse',
+          roomId,
+        }).catch(() => undefined);
       }
     }
   };
 
+  const startCall = (mode: CallMode) => {
+    if (!selectedPerson) return;
+    const roomId = roomIdFor(selectedPerson.id);
+    const callId = `${currentUserId}-call-${Date.now()}`;
+    setCall({
+      person: selectedPerson,
+      mode,
+      role: 'caller',
+      callId,
+      callerId: currentUserId,
+      calleeId: selectedPerson.id,
+      roomId,
+    });
+    void sendCallNotification({
+      recipientUserId: selectedPerson.id,
+      callerName: 'Pulse',
+      mode,
+      callId,
+    }).catch(() => undefined);
+  };
+
   if (call) {
-    return <CallSheet person={call.person} mode={call.mode} onClose={() => setCall(null)} />;
+    return (
+      <CallSheet
+        person={call.person}
+        mode={call.mode}
+        role={call.role}
+        callId={call.callId}
+        callerId={call.callerId}
+        calleeId={call.calleeId}
+        roomId={call.roomId}
+        onClose={() => setCall(null)}
+      />
+    );
   }
 
   if (selectedPerson) {
@@ -665,7 +808,7 @@ export default function HomeScreen() {
         isOnline={isOnline}
         onBack={() => setSelectedId(null)}
         onSend={sendMessage}
-        onCall={(mode) => setCall({ person: selectedPerson, mode })}
+        onCall={startCall}
       />
     );
   }
@@ -768,7 +911,7 @@ export default function HomeScreen() {
           <Ionicons name="call-outline" size={22} color={colors.mutedForeground} />
           <Text style={[styles.footerLabel, { color: colors.mutedForeground }]}>Calls</Text>
         </Pressable>
-        <Pressable style={styles.footerItem} onPress={() => Alert.alert('Settings', 'Profile and call settings are ready for your Firebase project.')}>
+        <Pressable style={styles.footerItem} onPress={enableNotifications}>
           <Ionicons name="settings-outline" size={22} color={colors.mutedForeground} />
           <Text style={[styles.footerLabel, { color: colors.mutedForeground }]}>Settings</Text>
         </Pressable>

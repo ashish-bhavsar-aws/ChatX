@@ -3,12 +3,12 @@ import {
   getDatabase,
   limitToLast,
   onValue,
-  push,
   query,
   ref,
   set,
   type Unsubscribe,
 } from 'firebase/database';
+import { decryptText, encryptText } from './crypto';
 
 export type ChatMessage = {
   id: string;
@@ -29,7 +29,7 @@ const firebaseConfig = {
 
 export const isFirebaseConfigured = Object.values(firebaseConfig).every(Boolean);
 
-function getFirebaseDatabase() {
+export function getFirebaseDatabase() {
   if (!isFirebaseConfigured) return null;
   const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
   return getDatabase(app);
@@ -50,14 +50,32 @@ export function subscribeToRoom(
   const messagesRef = query(ref(database, `rooms/${roomId}/messages`), limitToLast(80));
   return onValue(
     messagesRef,
-    (snapshot) => {
-      const messages: ChatMessage[] = [];
+    (snapshot) => void (async () => {
+      const values: Array<{
+        id: string;
+        text: unknown;
+        senderId: string;
+        createdAt: number;
+      }> = [];
       snapshot.forEach((child) => {
-        const value = child.val() as Omit<ChatMessage, 'id'>;
-        messages.push({ ...value, id: child.key ?? `${value.createdAt}` });
+        const value = child.val() as {
+          text: unknown;
+          senderId: string;
+          createdAt: number;
+        };
+        values.push({
+          ...value,
+          id: child.key ?? `${value.createdAt}`,
+        });
       });
+      const messages = await Promise.all(values.map(async (value) => ({
+          text: await decryptText(value.text).catch(() => 'Encrypted message unavailable on this device'),
+          senderId: value.senderId,
+          createdAt: value.createdAt,
+          id: value.id,
+        })));
       onMessages(messages.sort((a, b) => a.createdAt - b.createdAt));
-    },
+    })(),
     () => undefined,
   );
 }
@@ -76,8 +94,9 @@ export async function sendRoomMessage(
 
   const messageRef = ref(database, `rooms/${roomId}/messages/${message.id}`);
   try {
+    const encryptedText = await encryptText(message.text);
     await set(messageRef, {
-      text: message.text,
+      text: encryptedText,
       senderId: message.senderId,
       createdAt: message.createdAt,
     });

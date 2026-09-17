@@ -13,9 +13,12 @@ import {
 } from '@expo-google-fonts/inter';
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
+import { setBaseUrl } from '@workspace/api-client-react';
+import { configureNotifications } from '@/services/notifications';
 
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
+setBaseUrl(process.env.EXPO_PUBLIC_DOMAIN ? `https://${process.env.EXPO_PUBLIC_DOMAIN}` : null);
 
 const queryClient = new QueryClient();
 
@@ -36,6 +39,7 @@ export default function RootLayout() {
   });
 
   useEffect(() => {
+    configureNotifications();
     if (fontsLoaded || fontError) {
       SplashScreen.hideAsync();
     }

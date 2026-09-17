@@ -1,1 +1,2 @@
 - [Realtime calling constraints](realtime-calls.md) — lazy-load native WebRTC; browser preview cannot import the native module directly.
+- [Encrypted chat and push privacy](encrypted-chat.md) — keep stored message text ciphertext and FCM previews generic; shared keys are required across devices.

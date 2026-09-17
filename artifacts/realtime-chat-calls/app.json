@@ -14,16 +14,21 @@
       "supportsTablet": false,
       "infoPlist": {
         "NSCameraUsageDescription": "Pulse uses your camera for video calls.",
-        "NSMicrophoneUsageDescription": "Pulse uses your microphone for audio and video calls."
+        "NSMicrophoneUsageDescription": "Pulse uses your microphone for audio and video calls.",
+        "UIBackgroundModes": ["remote-notification"]
       }
     },
     "android": {
-      "permissions": ["android.permission.CAMERA", "android.permission.RECORD_AUDIO"]
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.POST_NOTIFICATIONS"
+      ]
     },
     "web": {
       "favicon": "./assets/images/icon.png"
     },
-    "plugins": ["expo-router"],
+    "plugins": ["expo-router", "expo-notifications"],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true

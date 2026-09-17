@@ -10,6 +10,8 @@ servers:
 tags:
   - name: health
     description: Health operations
+  - name: notifications
+    description: Firebase Cloud Messaging operations
 paths:
   /healthz:
     get:
@@ -24,6 +26,72 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /notifications/register:
+    post:
+      operationId: registerPushToken
+      tags: [notifications]
+      summary: Register a device for push notifications
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PushTokenRegistration"
+      responses:
+        "200":
+          description: Token registered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationStatus"
+        "400":
+          description: Invalid registration
+        "503":
+          description: Push notifications are not configured
+  /notifications/send-message:
+    post:
+      operationId: sendMessageNotification
+      tags: [notifications]
+      summary: Send a new-message push notification
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MessageNotification"
+      responses:
+        "200":
+          description: Notification sent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationStatus"
+        "400":
+          description: Invalid notification
+        "503":
+          description: Push notifications are not configured
+  /notifications/send-call:
+    post:
+      operationId: sendCallNotification
+      tags: [notifications]
+      summary: Send an incoming-call push notification
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CallNotification"
+      responses:
+        "200":
+          description: Notification sent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationStatus"
+        "400":
+          description: Invalid notification
+        "503":
+          description: Push notifications are not configured
 components:
   schemas:
     HealthStatus:
@@ -33,4 +101,54 @@ components:
           type: string
       required:
         - status
+    PushTokenRegistration:
+      type: object
+      properties:
+        userId:
+          type: string
+          minLength: 1
+        token:
+          type: string
+          minLength: 1
+        platform:
+          type: string
+          enum: [android, ios]
+      required: [userId, token, platform]
+    MessageNotification:
+      type: object
+      properties:
+        recipientUserId:
+          type: string
+          minLength: 1
+        senderName:
+          type: string
+          minLength: 1
+        roomId:
+          type: string
+          minLength: 1
+      required: [recipientUserId, senderName, roomId]
+    CallNotification:
+      type: object
+      properties:
+        recipientUserId:
+          type: string
+          minLength: 1
+        callerName:
+          type: string
+          minLength: 1
+        mode:
+          type: string
+          enum: [audio, video]
+        callId:
+          type: string
+          minLength: 1
+      required: [recipientUserId, callerName, mode, callId]
+    NotificationStatus:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        messageId:
+          type: string
+      required: [ok]
 
